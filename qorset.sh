@@ -7,6 +7,7 @@
 # Copyright (C) 2008 Hans Fugal <hans@fugal.net>
 # GPL2
 
+# For configuration and more information see this config file
 source /etc/qorset.conf
 
 ### reset
@@ -118,7 +119,7 @@ $ipta -j CONNMARK --restore-mark
 # bulk: mark 22
 ports "$BULK_SPORTS" "$BULK_DPORTS" 22
 
-# normal: mark 21 or don't mark at all
+# normal best-effort: mark 21 or don't mark at all
 
 # interactive: mark 12
 $ipta -p tcp -m length --length :128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
