@@ -2,7 +2,7 @@
 # usage: qorset (start|stop)
 # 
 # You need iproute2, kernel support for htb and sfq queueing disciplines, imq,
-# kernel and iptables support for connmark, dscp, tos, ipp2p
+# kernel and iptables support for connmark, dscp, tos, ipp2p, multiport
 
 #### User Configuration
 
@@ -22,6 +22,23 @@ DL_RESERVE=80
 ## Upload
 UL=800
 UL_RESERVE=80
+
+# Destination ports (tcp and udp) for each class. Syntax is that of iptables
+# -m multiport --dports
+EF_DPORTS=
+INT_DPORTS=
+BULK_DPORTS=
+DREGS_DPORTS=
+
+# Source ports (tcp and udp) for each class. Syntax is that of iptables
+# -m multiport --sports
+EF_SPORTS=
+INT_SPORTS=
+BULK_SPORTS=
+DREGS_SPORTS=
+
+# If you need more complicated matches, feel free to add iptables rules in the
+# filter section below.
 
 #### End user configuration
 
@@ -92,6 +109,19 @@ for i in 11 12 21 22 23; do
 done
 
 ## qos chain
+# Mark based on ports: sports, dports, mark
+ports() {
+    if [ -n "$1" ]; then
+        for proto in tcp udp; do
+            $ipta -p $proto -m multiport --sports "$1" -j MARK --set-mark $3
+        done
+    fi
+    if [ -n "$2" ]; then
+        for proto in tcp udp; do
+            $ipta -p $proto -m multiport --dports "$2" -j MARK --set-mark $3
+        done
+    fi
+}
 ipt="iptables -t mangle"
 $ipt -N qorset &>/dev/null
 
@@ -100,15 +130,16 @@ ipta="$ipt -A qorset"
 $ipta -j CONNMARK --restore-mark
 
 # the order in which we do this matters
-# bulk
+# bulk: mark 22
 $ipta -m tos --tos Maximize-Throughput -j MARK --set-mark 22
 $ipta -m tos --tos Minimize-Cost       -j MARK --set-mark 22
+ports "$BULK_SPORTS" "$BULK_DPORTS" 22
 
-# normal
+# normal: mark 21 or don't mark at all
 $ipta -m dscp --dscp BE -j MARK --set-mark 21
 $ipta -m tos --tos Maximize-Reliability -j MARK --set-mark 21
 
-# interactive
+# interactive: mark 12
 $ipta -m tos --tos Minimize-Delay -j MARK --set-mark 12
 for i in 4 5 6 7; do
     $ipta  -m tos --dscp-class CS$i -j MARK --set-mark 12
@@ -116,12 +147,20 @@ done
 $ipta -p tcp -m length --length :128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
 $ipta -p icmp -j MARK --set-mark 12
 $ipta -p ipv6-icmp -j MARK --set-mark 12
+if [ -n "$BULK_DPORTS" ]; then
+    for proto in tcp udp; do
+        $ipta -p $proto -m multiport --dports $BULK_DPORTS
+    done
+fi
+ports "$INT_SPORTS" "$INT_DPORTS" 12
 
-# expedited
+# expedited: mark 11
 $ipta -m dscp --dscp-class EF -j MARK --set-mark 11
+ports "$EF_SPORTS" "$EF_DPORTS" 11
 
-# dregs
+# dregs: mark 23
 $ipta -m ipp2p --ipp2p -j MARK --set-mark 23
+ports "$DREGS_SPORTS" "$DREGS_DPORTS" 23
 
 # save connection marks
 $ipta -j CONNMARK --save-mark
@@ -137,7 +176,6 @@ $ipt -A PREROUTING  -i $QOS_IF -j IMQ --todev 0
 
 # TODO
 # - detect VOIP
-# - user-defined ports
 # - maybe do tos bits with tc filter, for the mask ability?
 # - test it
 # - use a config file
