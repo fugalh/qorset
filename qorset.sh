@@ -69,24 +69,25 @@ $qdisc root handle 1:0 htb default 21
         $qdisc parent 1:23 sfq
 
 ### filters
-# filter on TOS field
-tos() {
-    tc filter add dev $1 parent 1:0 protocol ip prio 1 u32 \
-        match ip tos $2 $3 \
-        flowid $4
-}
-for dev in $QOS_IF imq0; do
-    tos $dev 0xb8 0xff 1:11 # expedited forwarding
-    tos $dev 0x10 0x10 1:12 # minimum-delay
-    tos $dev 0x80 0x80 1:12 # ip precedence >= 4
-    tos $dev 0x08 0x08 1:22 # maximize-throughput
-    tos $dev 0x04 0x04 1:21 # maximize-reliability
-done
-
 # filter on fw mark (see below)
 for i in 11 12 21 22 23; do
-    tc filter add dev $QOS_IF protocol ip prio 2 parent 1:0 handle $i fw flowid 1:$i
-    tc filter add dev imq0    protocol ip prio 2 parent 1:0 handle $i fw flowid 1:$i
+    tc filter add dev $QOS_IF protocol ip prio 1 parent 1:0 handle $i fw flowid 1:$i
+    tc filter add dev imq0    protocol ip prio 1 parent 1:0 handle $i fw flowid 1:$i
+done
+
+# filter on TOS field
+tos() {
+    tc filter add dev $1 parent 1:0 protocol ip prio 2 u32 \
+        match ip tos $2 $3 \
+        flowid 1:$4
+}
+for dev in $QOS_IF imq0; do
+    tos $dev 0xb8 0xff 11 # expedited forwarding
+    tos $dev 0x10 0x10 12 # minimum-delay
+    tos $dev 0x80 0x80 12 # ip precedence >= 4
+    tos $dev 0x04 0x04 21 # maximize-reliability
+    tos $dev 0x08 0x08 22 # maximize-throughput
+    tos $dev 0x02 0x02 23 # minimize-cost
 done
 
 ## qos chain
