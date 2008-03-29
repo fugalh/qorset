@@ -1,46 +1,13 @@
 #!/bin/sh
-# usage: qorset (start|stop)
+# usage: qorset ([start]|stop)
 # 
 # You need iproute2, kernel support for htb and sfq queueing disciplines, imq,
 # kernel and iptables support for connmark, dscp, tos, ipp2p, multiport
+#
+# Copyright (C) 2008 Hans Fugal <hans@fugal.net>
+# GPL2
 
-#### User Configuration
-
-# The interface to apply QoS to.
-QOS_IF=eth0
-
-# All bandwidth numbers are kilobit/second (1024 bits/s). You want to measure the
-# real-world download and upload bandwidth, and set these values to something
-# slightly lower.  The reserve is the amount of bandwidth you want to be
-# instantly available for expedited forwarding, e.g. VOIP calls. 80 kbit in
-# each direction is enough for one G.711 call.
-
-## Download
-DL=1250
-DL_RESERVE=80
-
-## Upload
-UL=800
-UL_RESERVE=80
-
-# Destination ports (tcp and udp) for each class. Syntax is that of iptables
-# -m multiport --dports
-EF_DPORTS=
-INT_DPORTS=
-BULK_DPORTS=
-DREGS_DPORTS=
-
-# Source ports (tcp and udp) for each class. Syntax is that of iptables
-# -m multiport --sports
-EF_SPORTS=
-INT_SPORTS=
-BULK_SPORTS=
-DREGS_SPORTS=
-
-# If you need more complicated matches, feel free to add iptables rules in the
-# filter section below.
-
-#### End user configuration
+source /etc/qorset.conf
 
 ### reset
 tc qdisc del dev $QOS_IF root &>/dev/null
@@ -102,10 +69,24 @@ $qdisc root handle 1:0 htb default 21
         $qdisc parent 1:23 sfq
 
 ### filters
-# filter on fw mark
+# filter on TOS field
+tos() {
+    tc filter add dev $1 parent 1:0 protocol ip prio 1 u32 \
+        match ip tos $2 $3 \
+        flowid $4
+}
+for dev in $QOS_IF imq0; do
+    tos $dev 0xb8 0xff 1:11 # expedited forwarding
+    tos $dev 0x10 0x10 1:12 # minimum-delay
+    tos $dev 0x80 0x80 1:12 # ip precedence >= 4
+    tos $dev 0x08 0x08 1:22 # maximize-throughput
+    tos $dev 0x04 0x04 1:21 # maximize-reliability
+done
+
+# filter on fw mark (see below)
 for i in 11 12 21 22 23; do
-    tc filter add dev $QOS_IF protocol ip parent 1:0 handle $i fw flowid 1:$i
-    tc filter add dev imq0    protocol ip parent 1:0 handle $i fw flowid 1:$i
+    tc filter add dev $QOS_IF protocol ip prio 2 parent 1:0 handle $i fw flowid 1:$i
+    tc filter add dev imq0    protocol ip prio 2 parent 1:0 handle $i fw flowid 1:$i
 done
 
 ## qos chain
@@ -122,40 +103,29 @@ ports() {
         done
     fi
 }
+
 ipt="iptables -t mangle"
 $ipt -N qorset &>/dev/null
 
-# restore connection marks
 ipta="$ipt -A qorset"
+
+# restore connection marks
 $ipta -j CONNMARK --restore-mark
 
-# the order in which we do this matters
+# the order in which we do all this matters
+
 # bulk: mark 22
-$ipta -m tos --tos Maximize-Throughput -j MARK --set-mark 22
-$ipta -m tos --tos Minimize-Cost       -j MARK --set-mark 22
 ports "$BULK_SPORTS" "$BULK_DPORTS" 22
 
 # normal: mark 21 or don't mark at all
-$ipta -m dscp --dscp BE -j MARK --set-mark 21
-$ipta -m tos --tos Maximize-Reliability -j MARK --set-mark 21
 
 # interactive: mark 12
-$ipta -m tos --tos Minimize-Delay -j MARK --set-mark 12
-for i in 4 5 6 7; do
-    $ipta  -m tos --dscp-class CS$i -j MARK --set-mark 12
-done
 $ipta -p tcp -m length --length :128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
 $ipta -p icmp -j MARK --set-mark 12
 $ipta -p ipv6-icmp -j MARK --set-mark 12
-if [ -n "$BULK_DPORTS" ]; then
-    for proto in tcp udp; do
-        $ipta -p $proto -m multiport --dports $BULK_DPORTS
-    done
-fi
 ports "$INT_SPORTS" "$INT_DPORTS" 12
 
 # expedited: mark 11
-$ipta -m dscp --dscp-class EF -j MARK --set-mark 11
 ports "$EF_SPORTS" "$EF_DPORTS" 11
 
 # dregs: mark 23
@@ -176,9 +146,7 @@ $ipt -A PREROUTING  -i $QOS_IF -j IMQ --todev 0
 
 # TODO
 # - detect VOIP
-# - maybe do tos bits with tc filter, for the mask ability?
 # - test it
-# - use a config file
 # - release stuff
 
 # vim:nowrap
