@@ -8,12 +8,21 @@
 # GPL2
 
 # For configuration and more information see this config file
-source /etc/qorset.conf
+. /etc/qorset.conf
 
 ### reset
-tc qdisc del dev $QOS_IF root &>/dev/null
-tc qdisc del dev imq0    root &>/dev/null
-iptables -t mangle  -F qorset &>/dev/null
+ipt="iptables -t mangle"
+(
+    tc qdisc del dev $QOS_IF root
+    tc qdisc del dev imq0    root
+    $ipt -N qorset
+    $ipt -D PREROUTING  -i $QOS_IF -j qorset
+    $ipt -D POSTROUTING -o $QOS_IF -j qorset
+    $ipt -D PREROUTING  -i $QOS_IF -j IMQ --todev 0
+    $ipt -F qorset
+    $ipt -X qorset
+) 2>/dev/null
+
 
 [ "$1" = "stop" ] && exit
 
@@ -106,7 +115,13 @@ ports() {
     fi
 }
 
-ipt="iptables -t mangle"
+# Mark based on l7-filter: protocols, mark
+l7() {
+    for proto in $1; do
+        $ipta -m layer7 --l7proto $proto -j MARK --set-mark $2
+    done
+}
+
 $ipt -N qorset &>/dev/null
 
 ipta="$ipt -A qorset"
@@ -118,6 +133,7 @@ $ipta -j CONNMARK --restore-mark
 
 # bulk: mark 22
 ports "$BULK_SPORTS" "$BULK_DPORTS" 22
+l7 smtp 22
 
 # normal best-effort: mark 21 or don't mark at all
 
@@ -125,13 +141,15 @@ ports "$BULK_SPORTS" "$BULK_DPORTS" 22
 $ipta -p tcp -m length --length :128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
 $ipta -p icmp -j MARK --set-mark 12
 $ipta -p ipv6-icmp -j MARK --set-mark 12
+l7 "ssh sip telnet" 12
 ports "$INT_SPORTS" "$INT_DPORTS" 12
 
 # expedited: mark 11
 ports "$EF_SPORTS" "$EF_DPORTS" 11
+l7 "ntp dns" 11
 
 # dregs: mark 23
-$ipta -m ipp2p --ipp2p -j MARK --set-mark 23
+l7 "bittorrent fasttrack gnutella" 23
 ports "$DREGS_SPORTS" "$DREGS_DPORTS" 23
 
 # save connection marks
@@ -150,5 +168,6 @@ $ipt -A PREROUTING  -i $QOS_IF -j IMQ --todev 0
 # - detect VOIP
 # - test it
 # - release stuff
+# - l7 user configuration?
 
 # vim:nowrap
