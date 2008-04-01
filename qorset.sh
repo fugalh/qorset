@@ -2,7 +2,7 @@
 # usage: qorset ([start]|stop)
 # 
 # You need iproute2, kernel support for htb and sfq queueing disciplines, imq,
-# kernel and iptables support for connmark, dscp, tos, ipp2p, multiport
+# kernel and iptables support for connmark, dscp, tos, l7-filter, multiport
 #
 # Copyright (C) 2008 Hans Fugal <hans@fugal.net>
 # GPL2
