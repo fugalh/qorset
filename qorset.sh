@@ -29,7 +29,7 @@
 # Alternatively, you can specify classification by ports below.
 
 # The interface to apply QoS to. Required
-QOS_IF=eth0
+QOS_IF=$(nvram get wan_ifname)
 
 # All bandwidth numbers are kilobit/second (1024 bits/s). You want to measure
 # the real-world download and upload bandwidth, and set these values to
@@ -45,19 +45,12 @@ DL_RESERVE=80
 UL=820
 UL_RESERVE=80
 
-# Destination ports (tcp and udp) for each class. Syntax is that of iptables
-# -m multiport --dports
-EF_DPORTS=5060,4569,53
-INT_DPORTS=22,23
-BULK_DPORTS=25
-DREGS_DPORTS=
-
-# Source ports (tcp and udp) for each class. Syntax is that of iptables
-# -m multiport --sports
-EF_SPORTS=
-INT_SPORTS=
-BULK_SPORTS=
-DREGS_SPORTS=
+# Ports (tcp and udp) for each class. Syntax is that of 
+# iptables -m multiport --ports
+EF_PORTS=5060,4569
+INT_PORTS=22,23,53
+BULK_PORTS=21,25
+DREGS_PORTS=
 
 # If you need more complicated matches, feel free to add iptables rules in the
 # filter section below
@@ -94,6 +87,10 @@ ipt="iptables -t mangle"
 #       1:22 bulk
 #       1:23 dregs
 
+sfq() {
+    $qdisc parent 1:$1 handle ${1}0 sfq
+}
+
 ## egress
 class="tc class add dev $QOS_IF"
 qdisc="tc qdisc add dev $QOS_IF"
@@ -102,38 +99,51 @@ $qdisc root handle 1:0 htb default 21
   $class parent 1:0  classid 1:1  htb rate ${UL}kbit
     $class parent 1:1  classid 1:10 htb rate ${UL_RESERVE}kbit ceil ${UL}kbit prio 1
       $class parent 1:10 classid 1:11 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 1
-        $qdisc parent 1:11 sfq
+        sfq 11
       $class parent 1:10 classid 1:12 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 2
-        $qdisc parent 1:12 sfq
+        sfq 12
     $class parent 1:1  classid 1:20 htb rate ${UL_BE}kbit ceil ${UL}kbit prio 2
       $class parent 1:20 classid 1:21 htb rate $(($UL_BE*66/100))kbit ceil ${UL}kbit prio 1
-        $qdisc parent 1:21 sfq
+        sfq 21
       $class parent 1:20 classid 1:22 htb rate $(($UL_BE*32/100))kbit ceil ${UL}kbit prio 2
-        $qdisc parent 1:22 sfq
+        sfq 22
       $class parent 1:20 classid 1:23 htb rate $(($UL_BE*1/100))kbit ceil ${UL}kbit prio 3
-        $qdisc parent 1:23 sfq
+        sfq 23
 
 ## ingress
 ip link set imq0 up
 class="tc class add dev imq0"
 qdisc="tc qdisc add dev imq0"
+
+# Random Early Detection. Only parameter is parent's minor number.
+red() {
+    MTU=1500
+    limit=$((40*$MTU))
+    min=$((5*$MTU))
+    max=$((20*$MTU))
+    avpkt=$(($MTU*6/10))
+    burst=16
+    probability=0.015
+    $qdisc parent 1:$1 handle ${1}0 red limit $limit min $min max $max avpkt $avpkt burst $burst probability $probability
+}
+
 DL_BE=$(($DL - $DL_RESERVE))
 $qdisc root handle 1:0 htb default 21
   $class parent 1:0  classid 1:1  htb rate ${DL}kbit
     $class parent 1:1  classid 1:10 htb rate ${DL_RESERVE}kbit ceil ${DL}kbit prio 1
       $class parent 1:10 classid 1:11 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 1
-        $qdisc parent 1:11 sfq
+        sfq 11
       $class parent 1:10 classid 1:12 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 2
-        $qdisc parent 1:12 sfq
+        sfq 12
     $class parent 1:1  classid 1:20 htb rate ${DL_BE}kbit ceil ${DL}kbit prio 2
       $class parent 1:20 classid 1:21 htb rate $(($DL_BE*66/100))kbit ceil ${DL}kbit prio 1
-        $qdisc parent 1:21 sfq
+        sfq 21
       $class parent 1:20 classid 1:22 htb rate $(($DL_BE*32/100))kbit ceil ${DL}kbit prio 2
-        $qdisc parent 1:22 sfq
+        sfq 22
       # dregs on ingress is intentionally ceil DL_BE unlike on egress, since we
       # have less control and we really want that reserve to be available
       $class parent 1:20 classid 1:23 htb rate $(($DL_BE*1/100))kbit ceil ${DL_BE}kbit prio 3
-        $qdisc parent 1:23 sfq
+        sfq 23
 
 ### filters
 # filter on fw mark (see below)
@@ -158,16 +168,11 @@ for dev in $QOS_IF imq0; do
 done
 
 ## qos chain
-# Mark based on ports: sports, dports, mark
+# Mark based on ports: ports, mark
 ports() {
     if [ -n "$1" ]; then
-        for proto in tcp udp; do
-            $ipta -p $proto -m multiport --sports "$1" -j MARK --set-mark $3
-        done
-    fi
-    if [ -n "$2" ]; then
-        for proto in tcp udp; do
-            $ipta -p $proto -m multiport --dports "$2" -j MARK --set-mark $3
+    	for proto in tcp udp; do 
+            $ipta -p $proto -m multiport --ports "$1" -j MARK --set-mark $2
         done
     fi
 }
@@ -189,7 +194,7 @@ $ipta -j CONNMARK --restore-mark
 # the order in which we do all this matters
 
 # bulk: mark 22
-ports "$BULK_SPORTS" "$BULK_DPORTS" 22
+ports "$BULK_PORTS" 22
 l7 smtp 22
 
 # normal best-effort: mark 21 or don't mark at all
@@ -198,19 +203,25 @@ l7 smtp 22
 $ipta -p tcp -m length --length :128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
 $ipta -p icmp -j MARK --set-mark 12
 $ipta -p ipv6-icmp -j MARK --set-mark 12
-l7 "ssh sip telnet" 12
-ports "$INT_SPORTS" "$INT_DPORTS" 12
+ports "$INT_PORTS" 12
 
 # expedited: mark 11
-ports "$EF_SPORTS" "$EF_DPORTS" 11
-l7 "ntp dns" 11
+ports "$EF_PORTS" 11
+l7 "ntp" 11
 
 # dregs: mark 23
 l7 "bittorrent fasttrack gnutella" 23
-ports "$DREGS_SPORTS" "$DREGS_DPORTS" 23
+ports "$DREGS_PORTS" 23
 
 # save connection marks
 $ipta -j CONNMARK --save-mark
+
+# now some empty rules for easy accounting
+$ipta -m mark --mark 11
+$ipta -m mark --mark 12
+$ipta -m mark --mark 21
+$ipta -m mark --mark 22
+$ipta -m mark --mark 23
 
 ## end qos chain
 
@@ -222,8 +233,7 @@ $ipt -A POSTROUTING -o $QOS_IF -j qorset
 $ipt -A PREROUTING  -i $QOS_IF -j IMQ --todev 0
 
 # TODO
-# - detect VOIP
-# - test it
+# - detect VOIP?
 # - release stuff
 # - l7 user configuration?
 
