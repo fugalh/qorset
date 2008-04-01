@@ -1,14 +1,71 @@
 #!/bin/sh
+# qorset QoS script
+# Copyright (C) 2008 Hans Fugal <hans@fugal.net>
+# GPL2
+
 # usage: qorset ([start]|stop)
 # 
 # You need iproute2, kernel support for htb and sfq queueing disciplines, imq,
 # kernel and iptables support for connmark, dscp, tos, l7-filter, multiport
 #
-# Copyright (C) 2008 Hans Fugal <hans@fugal.net>
-# GPL2
+# qorset is a Quality of Service (QoS) script. It divides your network traffic
+# up into different classes and gives preference to some classes and
+# antipreference to others. It does not merely restrict bandwidth, so when the
+# link is otherwise idle a p2p application (for example) will be able to
+# utilize the entire link.
 
-# For configuration and more information see this config file
+# The classes are:
+#  - expedited forwarding (EF). This class is for hard-realtime traffic like
+#    VOIP
+#  - interactive (INT). This class is for things like ssh that are 
+#    soft-realtime
+#  - best effort (default)
+#  - bulk. Traffic that should get there but at a lower priority, e.g. SMTP
+#  - dregs. This class gets whatever is left over. If any of the above classes
+#    are utilizing all of the link, this class will get almost nothing. Good
+#    for p2p, e.g. bittorrent
+#
+# For best results, ensure that your software sets an appropriate TOS field.
+# Alternatively, you can specify classification by ports below.
+
+# The interface to apply QoS to. Required
+QOS_IF=eth0
+
+# All bandwidth numbers are kilobit/second (1024 bits/s). You want to measure
+# the real-world download and upload bandwidth, and set these values to
+# something slightly lower.  The reserve is the amount of bandwidth you want to
+# be instantly available for expedited forwarding, e.g. VOIP calls. 80 kbit in
+# each direction is enough for one G.711 call.
+
+## Download. Required
+DL=1299
+DL_RESERVE=80
+
+## Upload
+UL=820
+UL_RESERVE=80
+
+# Destination ports (tcp and udp) for each class. Syntax is that of iptables
+# -m multiport --dports
+EF_DPORTS=5060,4569,53
+INT_DPORTS=22,23
+BULK_DPORTS=25
+DREGS_DPORTS=
+
+# Source ports (tcp and udp) for each class. Syntax is that of iptables
+# -m multiport --sports
+EF_SPORTS=
+INT_SPORTS=
+BULK_SPORTS=
+DREGS_SPORTS=
+
+# If you need more complicated matches, feel free to add iptables rules in the
+# filter section below
+
+# Source configuration file (it's probably best to put changes here)
 . /etc/qorset.conf
+
+### end configuration
 
 ### reset
 ipt="iptables -t mangle"
