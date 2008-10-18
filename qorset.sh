@@ -27,6 +27,9 @@
 #
 # For best results, ensure that your software sets an appropriate TOS field.
 # Alternatively, you can specify classification by ports below.
+#
+# This script is written with openwrt in mind, but could easily be adapted to
+# generic linux.
 
 # The interface to apply QoS to. Required
 QOS_IF=$(nvram get wan_ifname)
@@ -38,7 +41,7 @@ QOS_IF=$(nvram get wan_ifname)
 # each direction is enough for one G.711 call.
 
 ## Download. Required
-DL=1299
+DL=1200
 DL_RESERVE=80
 
 ## Upload
@@ -48,7 +51,10 @@ UL_RESERVE=80
 # Ports (tcp and udp) for each class. Syntax is that of 
 # iptables -m multiport --ports
 EF_PORTS=5060,4569
-INT_PORTS=22,23,53
+# I don't include 22 (ssh) here, because OpenSSH (at least) does a good job of
+# setting TOS bits, and if we match indiscriminantly on port 22 we catch scp
+# too, which is bulk traffic.
+INT_PORTS=23,53
 BULK_PORTS=21,25
 DREGS_PORTS=
 
@@ -88,7 +94,7 @@ ipt="iptables -t mangle"
 #       1:23 dregs
 
 sfq() {
-    $qdisc parent 1:$1 handle ${1}0 sfq
+    $qdisc parent 1:$1 handle $1 sfq
 }
 
 ## egress
@@ -103,9 +109,9 @@ $qdisc root handle 1:0 htb default 21
       $class parent 1:10 classid 1:12 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 2
         sfq 12
     $class parent 1:1  classid 1:20 htb rate ${UL_BE}kbit ceil ${UL}kbit prio 2
-      $class parent 1:20 classid 1:21 htb rate $(($UL_BE*66/100))kbit ceil ${UL}kbit prio 1
+      $class parent 1:20 classid 1:21 htb rate $(($UL_BE*75/100))kbit ceil ${UL}kbit prio 1
         sfq 21
-      $class parent 1:20 classid 1:22 htb rate $(($UL_BE*32/100))kbit ceil ${UL}kbit prio 2
+      $class parent 1:20 classid 1:22 htb rate $(($UL_BE*24/100))kbit ceil ${UL}kbit prio 2
         sfq 22
       $class parent 1:20 classid 1:23 htb rate $(($UL_BE*1/100))kbit ceil ${UL}kbit prio 3
         sfq 23
@@ -124,7 +130,7 @@ red() {
     avpkt=$(($MTU*6/10))
     burst=16
     probability=0.015
-    $qdisc parent 1:$1 handle ${1}0 red limit $limit min $min max $max avpkt $avpkt burst $burst probability $probability
+    $qdisc parent 1:$1 handle $1 red limit $limit min $min max $max avpkt $avpkt burst $burst probability $probability
 }
 
 DL_BE=$(($DL - $DL_RESERVE))
@@ -132,18 +138,18 @@ $qdisc root handle 1:0 htb default 21
   $class parent 1:0  classid 1:1  htb rate ${DL}kbit
     $class parent 1:1  classid 1:10 htb rate ${DL_RESERVE}kbit ceil ${DL}kbit prio 1
       $class parent 1:10 classid 1:11 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 1
-        sfq 11
+        red 11
       $class parent 1:10 classid 1:12 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 2
-        sfq 12
+        red 12
     $class parent 1:1  classid 1:20 htb rate ${DL_BE}kbit ceil ${DL}kbit prio 2
-      $class parent 1:20 classid 1:21 htb rate $(($DL_BE*66/100))kbit ceil ${DL}kbit prio 1
-        sfq 21
-      $class parent 1:20 classid 1:22 htb rate $(($DL_BE*32/100))kbit ceil ${DL}kbit prio 2
-        sfq 22
+      $class parent 1:20 classid 1:21 htb rate $(($DL_BE*75/100))kbit ceil ${DL}kbit prio 1
+        red 21
+      $class parent 1:20 classid 1:22 htb rate $(($DL_BE*24/100))kbit ceil ${DL}kbit prio 2
+        red 22
       # dregs on ingress is intentionally ceil DL_BE unlike on egress, since we
       # have less control and we really want that reserve to be available
       $class parent 1:20 classid 1:23 htb rate $(($DL_BE*1/100))kbit ceil ${DL_BE}kbit prio 3
-        sfq 23
+        red 23
 
 ### filters
 # filter on fw mark (see below)
@@ -154,7 +160,7 @@ done
 
 # filter on TOS field
 tos() {
-    tc filter add dev $1 parent 1:0 protocol ip prio 2 u32 \
+    tc filter add dev $1 parent 1:0 protocol ip prio 0 u32 \
         match ip tos $2 $3 \
         flowid 1:$4
 }
@@ -162,9 +168,8 @@ for dev in $QOS_IF imq0; do
     tos $dev 0xb8 0xff 11 # expedited forwarding
     tos $dev 0x10 0x10 12 # minimum-delay
     tos $dev 0x80 0x80 12 # ip precedence >= 4
-    tos $dev 0x04 0x04 21 # maximize-reliability
+    tos $dev 0x04 0x40 21 # maximize-reliability
     tos $dev 0x08 0x08 22 # maximize-throughput
-    tos $dev 0x02 0x02 23 # minimize-cost
 done
 
 ## qos chain
@@ -236,5 +241,6 @@ $ipt -A PREROUTING  -i $QOS_IF -j IMQ --todev 0
 # - detect VOIP?
 # - release stuff
 # - l7 user configuration?
+# - quantum size or r2q
 
 # vim:nowrap
