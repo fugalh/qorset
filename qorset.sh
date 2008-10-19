@@ -4,16 +4,13 @@
 # GPL2
 
 # usage: qorset ([start]|stop)
-# 
-# You need iproute2, kernel support for htb and sfq queueing disciplines, imq,
-# kernel and iptables support for connmark, dscp, tos, l7-filter, multiport
-#
+#   
 # qorset is a Quality of Service (QoS) script. It divides your network traffic
 # up into different classes and gives preference to some classes and
 # antipreference to others. It does not merely restrict bandwidth, so when the
 # link is otherwise idle a p2p application (for example) will be able to
 # utilize the entire link.
-
+#
 # The classes are:
 #  - expedited forwarding (EF). This class is for hard-realtime traffic like
 #    VOIP
@@ -30,6 +27,29 @@
 #
 # This script is written with openwrt in mind, but could easily be adapted to
 # generic linux.
+# 
+# You need iproute2, kernel support for htb, sfq, and red queueing disciplines,
+# imq, kernel and iptables support for connmark, dscp, tos, l7-filter, and
+# multiport.
+# 
+# For openwrt, this means install the following packages:
+#   tc
+#   iptables-mod-conntrack
+#   iptables-mod-extra
+#   iptables-mod-filter
+#   iptables-mod-imq
+#   iptables-mod-ipopt
+#
+# and add the following modules to /etc/modules:
+#   imq
+#   sch_htb                                                                                                                                                                            
+#   sch_sfq                                                                                                                                                                            
+#   sch_red                                                                                                                                                                            
+#   cls_u32                                                                                                                                                                            
+#   cls_fw                                                                                                                                                                             
+#   ipt_layer7                                                                                                                                                                         
+#   ipt_IMQ                                                                                                                                                                            
+#   ipt_CONNMARK                                                                                                                                                                       
 
 # The interface to apply QoS to. Required
 QOS_IF=$(nvram get wan_ifname)
@@ -65,11 +85,6 @@ DREGS_PORTS=
 . /etc/qorset.conf
 
 ### end configuration
-
-### load modules (openwrt)
-for m in cls_u32 sch_red ipt_layer7 ipt_IMQ imq sch_sfq sch_htb cls_fw ipt_CONNMARK ipt_length; do
-    insmod $m
-done
 
 ### reset
 ipt="iptables -t mangle"
