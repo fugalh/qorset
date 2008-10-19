@@ -1,0 +1,5 @@
+- decide whether to do DREGS_PORTS et al or DREGS_[SD]PORTS, and make it consistent.
+- detect VOIP?
+- release stuff
+- l7 user configuration?
+- quantum size or r2q

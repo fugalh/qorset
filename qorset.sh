@@ -66,6 +66,11 @@ DREGS_PORTS=
 
 ### end configuration
 
+### load modules (openwrt)
+for m in cls_u32 sch_red ipt_layer7 ipt_IMQ imq sch_sfq sch_htb cls_fw ipt_CONNMARK ipt_length; do
+    insmod $m
+done
+
 ### reset
 ipt="iptables -t mangle"
 (
@@ -236,11 +241,5 @@ $ipt -A POSTROUTING -o $QOS_IF -j qorset
 
 # ingress through imq0
 $ipt -A PREROUTING  -i $QOS_IF -j IMQ --todev 0
-
-# TODO
-# - detect VOIP?
-# - release stuff
-# - l7 user configuration?
-# - quantum size or r2q
 
 # vim:nowrap
