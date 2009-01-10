@@ -1,4 +1,13 @@
+- apparently this IFB thing replaces IMQ, and doesn't require any kernel or
+  iptables mods. Figure out how to use it, and whether it's applicable on
+  openwrt.
+
+- Divide qorset into two versions: full and openwrt. probably have common code
+  (perhaps by sourcing or perhaps by concatenation from makefile)
+
 - decide whether to do DREGS_PORTS et al or DREGS_[SD]PORTS, and make it consistent.
+    do in/out ports AND/OR bilateral, for all kinds
+
 - detect VOIP?
 - release stuff
 - l7 user configuration?
