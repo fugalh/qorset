@@ -1,6 +1,6 @@
 #!/bin/sh
 # qorset QoS script
-# Copyright (C) 2008 Hans Fugal <hans@fugal.net>
+# Copyright (C) 2009 Hans Fugal <hans@fugal.net>
 # GPL2
 
 # usage: qorset ([start]|stop)
@@ -52,7 +52,12 @@
 #   ipt_CONNMARK                                                                                                                                                                       
 
 # The interface to apply QoS to. Required
-QOS_IF=$(nvram get wan_ifname)
+nvram=/usr/sbin/nvram
+if [ -x $nvram ]; then
+    QOS_IF=$($nvram get wan_ifname)
+else
+    QOS_IF=eth1
+fi
 
 # All bandwidth numbers are kilobit/second (1024 bits/s). You want to measure
 # the real-world download and upload bandwidth, and set these values to
@@ -64,7 +69,7 @@ QOS_IF=$(nvram get wan_ifname)
 DL=1200
 DL_RESERVE=80
 
-## Upload
+## Upload. Required
 UL=820
 UL_RESERVE=80
 
@@ -85,6 +90,11 @@ DREGS_PORTS=
 . /etc/qorset.conf
 
 ### end configuration
+
+if [ -z "$QOS_IF" ]; then
+    echo "Please specify the interface."
+    exit 1
+fi
 
 ### reset
 ipt="iptables -t mangle"
