@@ -52,12 +52,8 @@
 #   ipt_CONNMARK                                                                                                                                                                       
 
 # The interface to apply QoS to. Required
-nvram=/usr/sbin/nvram
-if [ -x $nvram ]; then
-    QOS_IF=$($nvram get wan_ifname)
-else
-    QOS_IF=eth1
-fi
+#QOS_IF=$(nvram get wan_ifname) # OpenWRT
+QOS_IF=eth0
 
 # All bandwidth numbers are kilobit/second (1024 bits/s). You want to measure
 # the real-world download and upload bandwidth, and set these values to
@@ -81,7 +77,7 @@ EF_PORTS=5060,4569
 # too, which is bulk traffic.
 INT_PORTS=23,53
 BULK_PORTS=21,25
-DREGS_PORTS=
+DREGS_PORTS=6881:6999
 
 # If you need more complicated matches, feel free to add iptables rules in the
 # filter section below
@@ -90,11 +86,6 @@ DREGS_PORTS=
 . /etc/qorset.conf
 
 ### end configuration
-
-if [ -z "$QOS_IF" ]; then
-    echo "Please specify the interface."
-    exit 1
-fi
 
 ### reset
 ipt="iptables -t mangle"
