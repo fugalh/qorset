@@ -83,7 +83,8 @@ DREGS_PORTS=6881:6999
 # filter section below
 
 # Source configuration file (it's probably best to put changes here)
-. /etc/qorset.conf
+[ -r qorset.conf ] && . qorset.conf
+[ -r /etc/qorset.conf ] && . /etc/qorset.conf
 
 ### end configuration
 
@@ -122,19 +123,20 @@ sfq() {
 class="tc class add dev $QOS_IF"
 qdisc="tc qdisc add dev $QOS_IF"
 UL_BE=$(($UL - $UL_RESERVE))
+Q=1500
 $qdisc root handle 1:0 htb default 21
   $class parent 1:0  classid 1:1  htb rate ${UL}kbit
     $class parent 1:1  classid 1:10 htb rate ${UL_RESERVE}kbit ceil ${UL}kbit prio 1
-      $class parent 1:10 classid 1:11 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 1
+      $class parent 1:10 classid 1:11 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 1 quantum $Q
         sfq 11
-      $class parent 1:10 classid 1:12 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 2
+      $class parent 1:10 classid 1:12 htb rate $(($UL_RESERVE/2))kbit ceil ${UL}kbit prio 2 quantum $Q
         sfq 12
     $class parent 1:1  classid 1:20 htb rate ${UL_BE}kbit ceil ${UL}kbit prio 2
-      $class parent 1:20 classid 1:21 htb rate $(($UL_BE*75/100))kbit ceil ${UL}kbit prio 1
+      $class parent 1:20 classid 1:21 htb rate $(($UL_BE*75/100))kbit ceil ${UL}kbit prio 1 quantum $Q
         sfq 21
-      $class parent 1:20 classid 1:22 htb rate $(($UL_BE*24/100))kbit ceil ${UL}kbit prio 2
+      $class parent 1:20 classid 1:22 htb rate $(($UL_BE*24/100))kbit ceil ${UL}kbit prio 2 quantum $Q
         sfq 22
-      $class parent 1:20 classid 1:23 htb rate $(($UL_BE*1/100))kbit ceil ${UL}kbit prio 3
+      $class parent 1:20 classid 1:23 htb rate $(($UL_BE*1/100))kbit ceil ${UL}kbit prio 3 quantum $Q
         sfq 23
 
 ## ingress
@@ -158,19 +160,19 @@ DL_BE=$(($DL - $DL_RESERVE))
 $qdisc root handle 1:0 htb default 21
   $class parent 1:0  classid 1:1  htb rate ${DL}kbit
     $class parent 1:1  classid 1:10 htb rate ${DL_RESERVE}kbit ceil ${DL}kbit prio 1
-      $class parent 1:10 classid 1:11 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 1
-        red 11
-      $class parent 1:10 classid 1:12 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 2
-        red 12
+      $class parent 1:10 classid 1:11 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 1 quantum $Q
+        sfq 11
+      $class parent 1:10 classid 1:12 htb rate $(($DL_RESERVE/2))kbit ceil ${DL}kbit prio 2 quantum $Q
+        sfq 12
     $class parent 1:1  classid 1:20 htb rate ${DL_BE}kbit ceil ${DL}kbit prio 2
-      $class parent 1:20 classid 1:21 htb rate $(($DL_BE*75/100))kbit ceil ${DL}kbit prio 1
-        red 21
-      $class parent 1:20 classid 1:22 htb rate $(($DL_BE*24/100))kbit ceil ${DL}kbit prio 2
-        red 22
+      $class parent 1:20 classid 1:21 htb rate $(($DL_BE*75/100))kbit ceil ${DL}kbit prio 1 quantum $Q
+        sfq 21
+      $class parent 1:20 classid 1:22 htb rate $(($DL_BE*24/100))kbit ceil ${DL}kbit prio 2 quantum $Q
+        sfq 22
       # dregs on ingress is intentionally ceil DL_BE unlike on egress, since we
       # have less control and we really want that reserve to be available
-      $class parent 1:20 classid 1:23 htb rate $(($DL_BE*1/100))kbit ceil ${DL_BE}kbit prio 3
-        red 23
+      $class parent 1:20 classid 1:23 htb rate $(($DL_BE*1/100))kbit ceil ${DL_BE}kbit prio 3 quantum $Q
+        sfq 23
 
 ### filters
 # filter on fw mark (see below)
@@ -226,7 +228,6 @@ l7 smtp 22
 # normal best-effort: mark 21 or don't mark at all
 
 # interactive: mark 12
-$ipta -p tcp -m length --length :128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
 $ipta -p icmp -j MARK --set-mark 12
 $ipta -p ipv6-icmp -j MARK --set-mark 12
 ports "$INT_PORTS" 12
@@ -241,6 +242,11 @@ ports "$DREGS_PORTS" 23
 
 # save connection marks
 $ipta -j CONNMARK --save-mark
+
+# this has to happen after mark saving, or we end up marking bulk traffic as
+# interactive due to the mark restoration (e.g. scp), when the true tos is
+# stripped (e.g. comcast)
+$ipta -p tcp -m length --length 0:128 --tcp-flags SYN,RST,ACK ACK -j MARK --set-mark 12
 
 # now some empty rules for easy accounting
 $ipta -m mark --mark 11
