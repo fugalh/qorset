@@ -2,3 +2,12 @@ See the comments at the top of qorset.sh
 
 It's still rough around the edges, but do try it and if it doesn't work let me
 know and I'll work with you and we'll polish it up. Patches welcome.
+
+Requirements:
+    iproute2
+    tc
+    iptables
+    l7-filter
+    imq
+    htb kernel module
+    sfq kernel module
