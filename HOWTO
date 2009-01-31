@@ -1,0 +1,23 @@
+Your linux distribution may not have l7-filter and/or IMQ support in the kernel
+and/or iptables. In that case, follow these general directions.
+
+# iptables
+Get the iptables sources and apply the appropriate IMQ patch, and copy the
+l7-filter files into place, per the respective instructions. You will need to
+tell configure where to find the kernel headers.
+
+Build and install.
+
+# kernel
+Get the kernel sources and configure them as you normally would. If you've
+never compiled a kernel before, there are many guides on the web.
+
+Apply the l7-filter and IMQ patches to the kernel and 'make oldconfig'.
+
+Build and install the kernel.
+
+Reboot.
+
+# setup
+Make sure you can load the modules (imq, xt_layer7), and probably set up your
+distribution to auto-load them (/etc/modules).
