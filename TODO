@@ -11,3 +11,4 @@
 - detect VOIP?
 - release stuff
 - l7 user configuration?
+- red or sfq? does anyone know whether red is better for ingress shaping?
