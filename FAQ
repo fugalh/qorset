@@ -1,0 +1,16 @@
+Q: Qorset?
+A: My take on the wondershaper (http://lartc.org/wondershaper/).
+
+Q: Groan
+A: Yeah
+
+Q: What was wrong with wondershaper?
+A: It's old, a little opaque, didn't work on OpenWRT out of the box, and I just
+had my own ideas of how to set it up. But I liked the idea of a simple
+almost-zero-config QoS script so I tried to generalize mine in the same fashion
+as the original.
+
+Q: X doesn't work!
+A: Read the README and HOWTO, and if that doesn't help, drop me a line. If you
+have trouble but figure it out on your own, drop me a line or even better a
+patch so that others can benefit in the future.
