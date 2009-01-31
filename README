@@ -1,4 +1,4 @@
-See the comments at the top of qorset.sh
+See the comments at the top of qorset.sh for configuration.
 
 It's still rough around the edges, but do try it and if it doesn't work let me
 know and I'll work with you and we'll polish it up. Patches welcome.
@@ -11,3 +11,26 @@ Requirements:
     imq
     htb kernel module
     sfq kernel module
+
+See the file HOWTO for terse but hopefully-helpful instructions on getting your
+kernel and iptables up to speed.
+
+# Getting Started
+First, establish a performance baseline so you know if it's working. Begin by
+doing a bandwidth speed test on an otherwise quiet line to figure out what your
+actual speeds are. Run a few tests at a few different servers and take the
+average. Then, set up a ping to a remote server. Note the average latency
+(probably < 100ms). Then do something like a bandwidth speed test or scp a big
+file, and watch the latency skyrocket. This is bad. 
+
+Now, set the bandwidth cap in qorset.conf to HALF of your bandwidth up and
+down. Start qorset (./qorset.sh) and repeat the experiment. You should see the
+latency stays pretty low even during a bulk transfer. If not, something's
+wrong.
+
+Now, independently adjust the bandwidth caps from halfway between where it is
+to your measured max bandwidth, rerun qorset, and confirm that your ping
+latencies remain low while doing a bulk transfer. Repeat until you find the
+best bandwidth that doesn't impact your latency. 
+
+To disable qorset just run './qorset.sh stop'.
